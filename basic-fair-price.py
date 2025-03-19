@@ -6,17 +6,15 @@ df = pd.read_csv('data.csv', delimiter=';')
 kelp = df[df['product'] == 'KELP']
 resin = df[df['product'] == 'RAINFOREST_RESIN']
 
-# Calculate the spread
-kelp['spread'] = kelp['ask_price_1'] - kelp['bid_price_1']
-resin['spread'] = resin['ask_price_1'] - resin['bid_price_1']
-
+# Calculate the fair price for each product (midpoint between best bid and best ask)
+# (Best Bid + Best Ask) / 2
 kelp['fair'] = (kelp['ask_price_1'] + kelp['bid_price_1']) / 2
 resin['fair'] = (resin['ask_price_1'] + resin['bid_price_1']) / 2
 
-
-
-
 # Print descriptive stats for resin and kelp
-print(resin.describe())
-print("----------------")
 print(kelp.describe())
+print(resin.describe())
+
+# Print the mean of the fair price for each product
+print(kelp['fair'].mean())
+print(resin['fair'].mean())
