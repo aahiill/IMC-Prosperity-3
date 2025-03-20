@@ -9,7 +9,7 @@ class Trader:
         print("Observations: " + str(state.observations))
 
         products = {
-            "KELP": 2019,
+            "KELP": 2018,
             "RAINFOREST_RESIN": 10000
         }
 
