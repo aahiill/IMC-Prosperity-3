@@ -8,21 +8,18 @@ class Trader:
         print("traderData: " + state.traderData)
         print("Observations: " + str(state.observations))
 
-        # Products and their acceptable prices
-        products = {
-            "KELP": 2018,
-            "RAINFOREST_RESIN": 10000
-        }
-
 				# Orders to be placed on exchange matching engine
         result = {}
         for product in state.order_depths:
             
-            # See basic-fair-price.py for a more detailed explanation of this calculation
-            acceptable_price = products.get(product)
-
-            if acceptable_price is None:
-                continue
+            if product == "KELP" and state.timestamp <= 2000:
+                acceptable_price = 2024
+            if product == "KELP" and state.timestamp <= 125000 and state.timestamp > 2000: 
+                acceptable_price = 2016
+            elif product == "KELP" and state.timestamp > 125000:
+                acceptable_price = 2020
+            elif product == "RAINFOREST_RESIN":
+                acceptable_price = 10000
 
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []

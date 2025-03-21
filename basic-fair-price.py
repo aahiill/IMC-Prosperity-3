@@ -1,4 +1,5 @@
 import pandas as pd
+import matplotlib.pyplot as plt  # Correct
 
 df = pd.read_csv('data.csv', delimiter=';')
 
@@ -18,3 +19,8 @@ print(resin.describe())
 # Print the mean of the fair price for each product
 print(kelp['fair'].mean())
 print(resin['fair'].mean())
+
+# Plot the fair price for each product
+kelp.plot(x='timestamp', y='fair', label='KELP Ask Price')
+
+plt.show()

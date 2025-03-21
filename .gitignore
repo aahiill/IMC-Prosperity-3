@@ -1,6 +1,6 @@
-# Byte-compiled / optimized / DLL files
+# Byte-compiled / optimised files (Python cache)
 __pycache__/
 
-# Virtual environment
+# Virtual environment folders
 .venv/
-.env
+.env/

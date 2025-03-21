@@ -8,4 +8,4 @@
 ## [19-03-2025]
 
 - Added `basic-fair-price.py` script to calculate fair values for `tutorial.py`.
-- Sea shells collected: **+2059**
+- Sea shells collected: **+2,247**

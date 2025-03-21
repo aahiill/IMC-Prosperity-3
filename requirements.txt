@@ -3,3 +3,4 @@ numpy==2.2.4
 pandas==2.2.3
 prosperity3bt==0.3.0
 prosperity3submit==0.1.0
+matplotlib==3.10.1
