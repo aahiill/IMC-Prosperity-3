@@ -4,3 +4,4 @@ __pycache__/
 # Virtual environment folders
 .venv/
 .env
+.prosperity3env/
