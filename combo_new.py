@@ -6,8 +6,8 @@ class Trader:
 
     def run(self, state: TradingState) -> tuple[Dict[str, List[Order]], int, str]:
         """
-        Main execution method. Uses VWAP for RAINFOREST-RESIN and
-        basic fair price for KELP.
+        Main execution method. Uses VWAP for RAINFOREST_RESIN and
+        hardcoded acceptable price logic for KELP.
         """
         result = {}
         conversions = 0
@@ -18,9 +18,9 @@ class Trader:
         else:
             data = {}
 
-        # VWAP for RAINFOREST-RESIN
-        if "RAINFOREST-RESIN" in state.order_depths:
-            product = "RAINFOREST-RESIN"
+        # VWAP for RAINFOREST_RESIN
+        if "RAINFOREST_RESIN" in state.order_depths:
+            product = "RAINFOREST_RESIN"
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
 
@@ -57,28 +57,35 @@ class Trader:
             data[f"{product}_val"] = cumulative_val
             data[f"{product}_vol"] = cumulative_vol
 
-        # Fair Price for KELP
+        # Hardcoded acceptable price logic for KELP
         if "KELP" in state.order_depths:
             product = "KELP"
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
 
-            # Calculate the fair price as the midpoint between best bid and best ask
-            if order_depth.sell_orders and order_depth.buy_orders:
-                best_ask = min(order_depth.sell_orders.keys())
-                best_bid = max(order_depth.buy_orders.keys())
-                fair_price = (best_ask + best_bid) / 2
-                print(f"{product} - Fair Price: {fair_price}")
+            # Determine acceptable price based on timestamp
+            if state.timestamp <= 2000:
+                acceptable_price = 2024
+            elif state.timestamp <= 125000:
+                acceptable_price = 2016
+            else:
+                acceptable_price = 2020
 
-                # BUY if there's a sell order below or equal to the fair price
+            print(f"{product} - Acceptable Price: {acceptable_price}")
+
+            # BUY if there's a sell order below the acceptable price
+            if order_depth.sell_orders:
+                best_ask = min(order_depth.sell_orders.keys())
                 best_ask_volume = order_depth.sell_orders[best_ask]
-                if best_ask <= fair_price:
+                if best_ask < acceptable_price:
                     print(f"BUY {product}: {-best_ask_volume} x {best_ask}")
                     orders.append(Order(product, best_ask, -best_ask_volume))
 
-                # SELL if there's a buy order above or equal to the fair price
+            # SELL if there's a buy order above the acceptable price
+            if order_depth.buy_orders:
+                best_bid = max(order_depth.buy_orders.keys())
                 best_bid_volume = order_depth.buy_orders[best_bid]
-                if best_bid >= fair_price:
+                if best_bid > acceptable_price:
                     print(f"SELL {product}: {best_bid_volume} x {best_bid}")
                     orders.append(Order(product, best_bid, -best_bid_volume))
 
