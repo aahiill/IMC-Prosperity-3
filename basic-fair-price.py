@@ -22,5 +22,6 @@ print(resin['fair'].mean())
 
 # Plot the fair price for each product
 kelp.plot(x='timestamp', y='fair', label='KELP Ask Price')
+resin.plot(x='timestamp', y='fair', label='RAINFOREST_RESIN Ask Price')
 
 plt.show()
