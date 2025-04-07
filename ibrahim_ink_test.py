@@ -56,16 +56,15 @@ class Trader:
             # --- ENTRY LOGIC ---
             # Z < -2: Buy if under limit
             if z < -2 and position < self.POSITION_LIMIT and order_depth.sell_orders:
-                best_ask = min(order_depth.sell_orders.keys())
+                best_ask = abs(min(order_depth.sell_orders.keys()))
                 ask_volume = order_depth.sell_orders[best_ask]
 
                 # Then go long
                 buy_volume = min(self.POSITION_LIMIT - position, ask_volume)
                 if buy_volume > 0:
                     orders.append(Order(product, best_ask, buy_volume))
-                    position += buy_volume
                     print(f"BUY {buy_volume} @ {best_ask}")
-
+            '''
             # Z > +2: Sell if over limit
             elif z > 2 and position > -self.POSITION_LIMIT and order_depth.buy_orders:
                 best_bid = max(order_depth.buy_orders.keys())
@@ -75,11 +74,10 @@ class Trader:
                 sell_volume = min(self.POSITION_LIMIT + position, bid_volume)
                 if sell_volume > 0:
                     orders.append(Order(product, best_bid, -sell_volume))
-                    position -= sell_volume
                     print(f"SELL {sell_volume} @ {best_bid}")
-
+                '''
             # --- EXIT LOGIC ---
-            # Exit long if Z > -0.5
+            # Exit long if Z > -0.75
             if position > 0 and z > -0.75 and order_depth.buy_orders:
                 best_bid = max(order_depth.buy_orders.keys())
                 exit_volume = min(position, order_depth.buy_orders[best_bid])
@@ -87,14 +85,15 @@ class Trader:
                 position -= exit_volume
                 print(f"EXIT LONG {exit_volume} @ {best_bid}")
 
-            # Exit short if Z < 0.5
+            '''
+            # Exit short if Z < 0.75
             elif position < 0 and z < 0.75 and order_depth.sell_orders:
                 best_ask = min(order_depth.sell_orders.keys())
                 exit_volume = min(-position, order_depth.sell_orders[best_ask])
                 orders.append(Order(product, best_ask, exit_volume))
                 position += exit_volume
                 print(f"EXIT SHORT {exit_volume} @ {best_ask}")
-
+'''
             result[product] = orders
 
         traderData = jsonpickle.encode(data)
