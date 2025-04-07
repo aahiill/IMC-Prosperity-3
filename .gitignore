@@ -5,3 +5,7 @@ __pycache__/
 .venv/
 .env
 .prosperity3env/
+
+# Backtest files and submission files
+backtests/
+submissions/
