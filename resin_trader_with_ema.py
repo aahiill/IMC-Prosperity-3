@@ -35,7 +35,7 @@ class Trader:
             print(f"Previous EMA for {product}: {prev_ema}")
 
             # Calculate EMA and update cumulative data
-            alpha = 2 / (3 + 1)  # Example smoothing factor for a 3-period EMA
+            alpha = 2 / (7 + 1)  # Example smoothing factor for a 7-period EMA
             last_trade_price = self.get_last_trade_price(order_depth)
             ema = self.calculate_ema(last_trade_price, prev_ema, alpha)
 
