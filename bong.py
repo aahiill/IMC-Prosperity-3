@@ -46,8 +46,7 @@ class Logger:
                         k: [
                             v.bidPrice, v.askPrice, v.transportFees,
                             v.exportTariff, v.importTariff, v.sugarPrice, v.sunlightIndex
-                        ]
-                        for k, v in state.observations.conversionObservations.items()
+                        ] for k, v in state.observations.conversionObservations.items()
                     }
                 ]
             ],
@@ -60,15 +59,19 @@ class Logger:
 
 logger = Logger()
 
-# --- Trader ---
 class Trader:
     POSITION_LIMIT = 50
+    HISTORY_LENGTH = 20
+    MOMENTUM_LOOKBACK = 5
+    MOMENTUM_THRESHOLD = 5
+    COOLDOWN_TICKS = 200
+    MIN_VOLATILITY = 1.5
+    MAX_SPREAD = 5
 
     def run(self, state: TradingState):
         result: Dict[str, List[Order]] = {}
         conversions = 0
 
-        # Load persistent data
         if state.traderData:
             data = jsonpickle.decode(state.traderData)
         else:
@@ -79,25 +82,68 @@ class Trader:
             order_depth = state.order_depths[product]
             position = state.position.get(product, 0)
 
-            # --- Strategy for RAINFOREST_RESIN ---
-            if product == "RAINFOREST_RESIN":
-                best_bid = 9997
-                best_ask = 10003
-                my_buy_price = best_bid + 1
-                my_sell_price = best_ask - 1
+            if product == "SQUID_INK":
+                best_bid = max(order_depth.buy_orders.keys(), default=None)
+                best_ask = min(order_depth.sell_orders.keys(), default=None)
 
-                max_buy_volume = self.POSITION_LIMIT - position
-                max_sell_volume = abs(-self.POSITION_LIMIT - position)
+                if best_bid is None or best_ask is None:
+                    continue
 
-                if my_buy_price < my_sell_price:
-                    if max_buy_volume > 0:
-                        logger.print(f"BUY {max_buy_volume} @ {my_buy_price}")
-                        orders.append(Order(product, my_buy_price, max_buy_volume))
-                    if max_sell_volume > 0:
-                        logger.print(f"SELL {max_sell_volume} @ {my_sell_price}")
-                        orders.append(Order(product, my_sell_price, -max_sell_volume))
+                mid_price = (best_bid + best_ask) / 2
+                spread = best_ask - best_bid
+                if spread > self.MAX_SPREAD:
+                    print(f"Spread too wide ({spread}) — skipping trade.")
+                    continue
 
-            # --- Strategy for KELP (VWAP Market Making) ---
+                history_key = f"{product}_mid_price_history"
+                history = data.get(history_key, [])
+                history.append(mid_price)
+                if len(history) > self.HISTORY_LENGTH:
+                    history.pop(0)
+                data[history_key] = history
+
+                momentum = mid_price - history[-self.MOMENTUM_LOOKBACK] if len(history) >= self.MOMENTUM_LOOKBACK else 0
+                volatility = statistics.stdev(history) if len(history) >= 5 else 0
+                if volatility < self.MIN_VOLATILITY:
+                    print(f"Low volatility ({volatility:.2f}) — skipping trade.")
+                    continue
+
+                cooldown_key = f"{product}_last_trade_tick"
+                last_trade_tick = data.get(cooldown_key, -9999)
+                if state.timestamp - last_trade_tick < self.COOLDOWN_TICKS:
+                    print(f"On cooldown — last trade @ {last_trade_tick}, now {state.timestamp}")
+                    continue
+
+                print(f"{product} | Mid: {mid_price:.2f} | Momentum: {momentum:.2f} | Vol: {volatility:.2f} | Spread: {spread} | Pos: {position}")
+
+                if momentum > self.MOMENTUM_THRESHOLD and position < self.POSITION_LIMIT:
+                    ask_volume = order_depth.sell_orders[best_ask]
+                    buy_volume = min(self.POSITION_LIMIT - position, ask_volume)
+                    if buy_volume > 0:
+                        orders.append(Order(product, best_ask, buy_volume))
+                        data[cooldown_key] = state.timestamp
+                        print(f"BUY {buy_volume} @ {best_ask}")
+
+                elif momentum < -self.MOMENTUM_THRESHOLD and position > -self.POSITION_LIMIT:
+                    bid_volume = order_depth.buy_orders[best_bid]
+                    sell_volume = min(self.POSITION_LIMIT + position, bid_volume)
+                    if sell_volume > 0:
+                        orders.append(Order(product, best_bid, -sell_volume))
+                        data[cooldown_key] = state.timestamp
+                        print(f"SELL {sell_volume} @ {best_bid}")
+
+                elif position > 0 and momentum < 0:
+                    exit_volume = min(position, order_depth.buy_orders[best_bid])
+                    orders.append(Order(product, best_bid, -exit_volume))
+                    data[cooldown_key] = state.timestamp
+                    print(f"EXIT LONG {exit_volume} @ {best_bid}")
+
+                elif position < 0 and momentum > 0:
+                    exit_volume = min(-position, order_depth.sell_orders[best_ask])
+                    orders.append(Order(product, best_ask, exit_volume))
+                    data[cooldown_key] = state.timestamp
+                    print(f"EXIT SHORT {exit_volume} @ {best_ask}")
+
             elif product == "KELP":
                 vwap_key = f"{product}_midprice_vwap_history"
                 vwap_history = data.get(vwap_key, [])
@@ -131,18 +177,25 @@ class Trader:
                     logger.print(f"SELL {max_sell_volume} @ {sell_price}")
                     orders.append(Order(product, sell_price, -max_sell_volume))
 
+            elif product == "RAINFOREST_RESIN":
+
+                fair_price = 10000
+                my_buy_price = fair_price - 2
+                my_sell_price = fair_price + 2
+
+                max_buy_volume = self.POSITION_LIMIT - position
+                max_sell_volume = abs(-self.POSITION_LIMIT - position)
+
+                if my_buy_price < my_sell_price:
+                    if max_buy_volume > 0:
+                        logger.print(f"BUY {max_buy_volume} @ {my_buy_price}")
+                        orders.append(Order(product, my_buy_price, max_buy_volume))
+                    if max_sell_volume > 0:
+                        logger.print(f"SELL {max_sell_volume} @ {my_sell_price}")
+                        orders.append(Order(product, my_sell_price, -max_sell_volume))
+
             result[product] = orders
 
         trader_data = jsonpickle.encode(data)
         logger.flush(state, result, conversions, trader_data)
         return result, conversions, trader_data
-
-    def calculate_ema(self, price: float, prev_ema: float, alpha: float) -> float:
-        return price if prev_ema is None else alpha * price + (1 - alpha) * prev_ema
-
-    def get_mid_price(self, order_depth: OrderDepth) -> float:
-        best_ask = min(order_depth.sell_orders.keys()) if order_depth.sell_orders else None
-        best_bid = max(order_depth.buy_orders.keys()) if order_depth.buy_orders else None
-        if best_ask is not None and best_bid is not None:
-            return (best_ask + best_bid) / 2
-        return best_ask or best_bid or 0.0
