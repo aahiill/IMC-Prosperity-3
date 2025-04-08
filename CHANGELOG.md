@@ -13,4 +13,7 @@
 ## [08-04-2025]
 
 - Added `bong.py` which trades all 3 commodities (merge of `kelply.py` and `resin_ink_merge.py`)
+- Kelp: VWAP mid-price then MM
+- Resin: eyeball fair price then MM
+- Ink: Momentum trading (issue with -50 position not recovering)
 - Resin and Kelp perform well, Squid Ink needs work
