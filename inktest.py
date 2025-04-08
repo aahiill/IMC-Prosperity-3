@@ -4,6 +4,10 @@ import numpy as np
 from typing import Dict, List
 from datamodel import Order, OrderDepth, TradingState
 
+"""
+used fourier transofrm to find cycle lengths
+using sawtooth wave to model price movements
+adjusts the cycle length and phase shift dynamically (dunno if phase shift is even helping rn)"""
 class Trader:
     WINDOW_SIZE = 5000  # true value 5000
     TUNE_EVERY = 500  # true value 500
