@@ -9,3 +9,8 @@
 
 - Added `basic-fair-price.py` script to calculate fair values for `tutorial.py`.
 - Sea shells collected: **+2,247**
+
+## [08-04-2025]
+
+- Added `bong.py` which trades all 3 commodities (merge of `kelply.py` and `resin_ink_merge.py`)
+- Resin and Kelp perform well, Squid Ink needs work
