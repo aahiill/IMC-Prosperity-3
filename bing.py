@@ -46,8 +46,7 @@ class Logger:
                         k: [
                             v.bidPrice, v.askPrice, v.transportFees,
                             v.exportTariff, v.importTariff, v.sugarPrice, v.sunlightIndex
-                        ]
-                        for k, v in state.observations.conversionObservations.items()
+                        ] for k, v in state.observations.conversionObservations.items()
                     }
                 ]
             ],
@@ -60,15 +59,19 @@ class Logger:
 
 logger = Logger()
 
-# --- Trader ---
 class Trader:
     POSITION_LIMIT = 50
+    HISTORY_LENGTH = 20
+    MOMENTUM_LOOKBACK = 5
+    MOMENTUM_THRESHOLD = 5
+    COOLDOWN_TICKS = 200
+    MIN_VOLATILITY = 1.5
+    MAX_SPREAD = 5
 
     def run(self, state: TradingState):
         result: Dict[str, List[Order]] = {}
         conversions = 0
 
-        # Load persistent data
         if state.traderData:
             data = jsonpickle.decode(state.traderData)
         else:
@@ -79,12 +82,72 @@ class Trader:
             order_depth = state.order_depths[product]
             position = state.position.get(product, 0)
 
-            # --- Strategy for RAINFOREST_RESIN ---
-            if product == "RAINFOREST_RESIN":
-                best_bid = 9997
-                best_ask = 10003
-                my_buy_price = best_bid + 1
-                my_sell_price = best_ask - 1
+            if product == "SQUID_INK":
+                pass
+
+            elif product == "KELP":
+                ema_key = f"{product}_ema"
+                last_ema = data.get(ema_key, None)
+
+                if order_depth and order_depth.buy_orders and order_depth.sell_orders:
+                    best_bid = max(order_depth.buy_orders.keys())
+                    best_ask = min(order_depth.sell_orders.keys())
+                    midprice = (best_bid + best_ask) / 2
+
+                    # EMA calculation
+                    N = 25
+                    alpha = 2 / (N + 1)
+
+                    if last_ema is None:
+                        ema = midprice
+                    else:
+                        ema = alpha * midprice + (1 - alpha) * last_ema
+
+                    data[ema_key] = ema
+                else:
+                    ema = last_ema if last_ema is not None else 2032
+
+                fair_value = ema
+                buy_price = round(fair_value - 1)
+                sell_price = round(fair_value + 1)
+
+                logger.print(f"[{product}] EMA: {fair_value:.2f} | Buy @ {buy_price} | Sell @ {sell_price}")
+
+                # Forced liquidation if at position limits
+                if position == 45:
+                    # Sell half at best bid
+                    quantity = self.POSITION_LIMIT // 2
+                    if order_depth.buy_orders:
+                        best_bid = max(order_depth.buy_orders.keys())
+                        if best_bid < buy_price:
+                            logger.print(f"⚠️ Position limit reached. SELL {quantity} @ {best_bid} to reduce exposure.")
+                            orders.append(Order(product, best_bid, -quantity))
+
+                elif position == -45:
+                    # Buy half at best ask
+                    quantity = self.POSITION_LIMIT // 2
+                    if order_depth.sell_orders:
+                        best_ask = min(order_depth.sell_orders.keys())
+                        if best_ask > sell_price:
+                            logger.print(f"⚠️ Position limit reached. BUY {quantity} @ {best_ask} to reduce exposure.")
+                            orders.append(Order(product, best_ask, quantity))
+
+                # Standard market-making logic
+                max_buy_volume = self.POSITION_LIMIT - position
+                max_sell_volume = abs(-self.POSITION_LIMIT - position)
+
+                if max_buy_volume > 0:
+                    logger.print(f"BUY {max_buy_volume} @ {buy_price}")
+                    orders.append(Order(product, buy_price, max_buy_volume))
+                if max_sell_volume > 0:
+                    logger.print(f"SELL {max_sell_volume} @ {sell_price}")
+                    orders.append(Order(product, sell_price, -max_sell_volume))
+
+            elif product == "RAINFOREST_RESIN":
+
+                fair_price = 10000
+                my_buy_price = fair_price - 2
+                my_sell_price = fair_price + 2
 
                 max_buy_volume = self.POSITION_LIMIT - position
                 max_sell_volume = abs(-self.POSITION_LIMIT - position)
@@ -97,52 +160,8 @@ class Trader:
                         logger.print(f"SELL {max_sell_volume} @ {my_sell_price}")
                         orders.append(Order(product, my_sell_price, -max_sell_volume))
 
-            # --- Strategy for KELP (VWAP Market Making) ---
-            elif product == "KELP":
-                vwap_key = f"{product}_midprice_vwap_history"
-                vwap_history = data.get(vwap_key, [])
-
-                if order_depth and order_depth.buy_orders and order_depth.sell_orders:
-                    best_bid = max(order_depth.buy_orders.keys())
-                    best_ask = min(order_depth.sell_orders.keys())
-                    midprice = (best_bid + best_ask) / 2
-                    vwap_history.append(midprice)
-                    if len(vwap_history) > 25:
-                        vwap_history.pop(0)
-                elif vwap_history:
-                    midprice = mean(vwap_history)
-                else:
-                    midprice = 2032
-
-                data[vwap_key] = vwap_history
-                fair_value = mean(vwap_history) if vwap_history else midprice
-                buy_price = round(fair_value - 1)
-                sell_price = round(fair_value + 1)
-
-                logger.print(f"[{product}] VWAP: {fair_value:.2f} | Buy @ {buy_price} | Sell @ {sell_price}")
-
-                max_buy_volume = self.POSITION_LIMIT - position
-                max_sell_volume = abs(-self.POSITION_LIMIT - position)
-
-                if max_buy_volume > 0:
-                    logger.print(f"BUY {max_buy_volume} @ {buy_price}")
-                    orders.append(Order(product, buy_price, max_buy_volume))
-                if max_sell_volume > 0:
-                    logger.print(f"SELL {max_sell_volume} @ {sell_price}")
-                    orders.append(Order(product, sell_price, -max_sell_volume))
-
             result[product] = orders
 
         trader_data = jsonpickle.encode(data)
         logger.flush(state, result, conversions, trader_data)
         return result, conversions, trader_data
-
-    def calculate_ema(self, price: float, prev_ema: float, alpha: float) -> float:
-        return price if prev_ema is None else alpha * price + (1 - alpha) * prev_ema
-
-    def get_mid_price(self, order_depth: OrderDepth) -> float:
-        best_ask = min(order_depth.sell_orders.keys()) if order_depth.sell_orders else None
-        best_bid = max(order_depth.buy_orders.keys()) if order_depth.buy_orders else None
-        if best_ask is not None and best_bid is not None:
-            return (best_ask + best_bid) / 2
-        return best_ask or best_bid or 0.0
