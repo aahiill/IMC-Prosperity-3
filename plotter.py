@@ -28,14 +28,14 @@ for file, day in files:
 df_all = pd.concat(dfs, ignore_index=True)
 
 # Filter by product
-# squid = df_all[df_all["product"] == "SQUID_INK"]
-kelp = df_all[df_all["product"] == "KELP"]
+squid = df_all[df_all["product"] == "SQUID_INK"]
+# kelp = df_all[df_all["product"] == "KELP"]
 # resin = df_all[df_all["product"] == "RAINFOREST_RESIN"]
 
 # Plot mid prices over continuous timeline
 plt.figure(figsize=(14, 6))
-# plt.plot(squid["timestamp"], squid["mid_price"], label="SQUID_INK", color="red")
-plt.plot(kelp["timestamp"], kelp["mid_price"], label="KELP", color="blue")
+plt.plot(squid["timestamp"], squid["mid_price"], label="SQUID_INK", color="red")
+# plt.plot(kelp["timestamp"], kelp["mid_price"], label="KELP", color="blue")
 # plt.plot(resin["timestamp"], resin["mid_price"], label="RAINFOREST_RESIN", color="teal")
 
 plt.xlabel("Timestamp (Continuous Across Days)")
