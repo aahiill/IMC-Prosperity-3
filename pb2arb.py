@@ -60,9 +60,9 @@ class Trader:
 
     RATIO_PB2 = {"CROISSANTS": 4, "JAMS": 2, "PICNIC_BASKET2": 1}
 
-    MAX_VOLUME = 5
-    ROLLING_WINDOW = 300
-    SLOPE_THRESHOLD = 0.05
+    MAX_VOLUME = 5 # max 'units' of a stock we can buy/sell in one order
+    Z_ENTRY_THRESHOLD = 1
+    Z_EXIT_THRESHOLD = 0.2
     EXIT_TURNAROUND_TOLERANCE = 0  # slope change direction
 
     def run(self, state: TradingState):
