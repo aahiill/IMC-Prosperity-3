@@ -58,7 +58,7 @@ class Logger:
 logger = Logger()
 
 class Trader:
-    CSV_FILENAME = "pb2_nav_log.csv"
+    CSV_FILENAME = "pb2_spread_log.csv"
 
     def run(self, state: TradingState):
         data = jsonpickle.decode(state.traderData) if state.traderData else {}
@@ -72,6 +72,7 @@ class Trader:
         jam_mid = self.get_mid_price(state, "JAMS")
         pb2_mid = self.get_mid_price(state, "PICNIC_BASKET2")
         nav = (4 * croissant_mid + 2 * jam_mid)
+        spread = pb2_mid - nav
 
         # Log info
         logger.print(f"TICK {tick} | PB2 Mid: {pb2_mid:.2f} | NAV: {nav:.2f}")
@@ -81,8 +82,8 @@ class Trader:
         with open(self.CSV_FILENAME, mode="a", newline="") as f:
             writer = csv.writer(f)
             if not file_exists:
-                writer.writerow(["tick", "pb2_mid", "nav"])
-            writer.writerow([tick, pb2_mid, nav])
+                writer.writerow(["tick", "spread"])
+            writer.writerow([tick, spread])
 
         trader_data = jsonpickle.encode(data)
         logger.flush(state, result, conversions, trader_data)
