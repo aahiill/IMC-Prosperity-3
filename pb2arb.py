@@ -138,6 +138,7 @@ class Trader:
         "PICNIC_BASKET2": 1,
     }
 
+
     MAX_VOLUME = 5 # max 'units' of a stock we can buy/sell in one order
     Z_ENTRY_THRESHOLD = 1
     Z_EXIT_THRESHOLD = 0.2
