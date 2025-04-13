@@ -66,7 +66,7 @@ class Trader:
     ENTRY_Z = 1.0
     EMA_ALPHA = 2 / (100 + 1)
     SPREAD_WINDOW = 200
-    QTY = 1
+    QTY = 5
     MAX_HOLD_TICKS = 10000000000000
     MIN_HOLD_TICKS = 100
 
