@@ -91,9 +91,11 @@ import numpy as np
 
 class Trader:
     VOLUME = 10
-    Z_SCORE_ENTRY = 1.0  # Entry threshold
-    Z_SCORE_EXIT = 0.2   # Exit threshold
-    HISTORY_LENGTH = 100
+    Z_SCORE_ENTRY = 1.5  # Entry threshold - 1.5 best value so far
+    Z_SCORE_EXIT = 0.1   # Exit threshold - 0.1 best value so far
+    HISTORY_LENGTH = 300 # 300 best value so far
+
+    VOLATILITY_THRESHOLD = 10  # Volatility threshold for entry signals
 
     def run(self, state: TradingState) -> tuple[dict[str, List[Order]], int, str]:
         SYMBOL = "SQUID_INK"
@@ -124,18 +126,20 @@ class Trader:
         std = np.std(history)
         z = (mid_price - mean) / std if std != 0 else 0
 
+        recent_volatility = np.std(history[-20:])
+
         # --- Entry Signals ---
-        if z < -self.Z_SCORE_ENTRY and position < 50:
+        if z < -self.Z_SCORE_ENTRY and position < 50 and recent_volatility < self.VOLATILITY_THRESHOLD:
             qty = min(self.VOLUME, 50 - position)
             orders.append(Order(SYMBOL, round(mid_price), qty))  # BUY
-        elif z > self.Z_SCORE_ENTRY and position > -50:
+        elif z > self.Z_SCORE_ENTRY and position > -50 and recent_volatility < self.VOLATILITY_THRESHOLD:
             qty = min(self.VOLUME, 50 + position)
             orders.append(Order(SYMBOL, round(mid_price), -qty))  # SELL
 
         # --- Exit Signals ---
-        elif position > 0 and z > -self.Z_SCORE_EXIT:
+        elif position > 0 and z > -self.Z_SCORE_EXIT and recent_volatility < self.VOLATILITY_THRESHOLD:
             orders.append(Order(SYMBOL, round(mid_price), -position))  # Close long
-        elif position < 0 and z < self.Z_SCORE_EXIT:
+        elif position < 0 and z < self.Z_SCORE_EXIT and recent_volatility < self.VOLATILITY_THRESHOLD:
             orders.append(Order(SYMBOL, round(mid_price), -position))  # Close short
 
         result[SYMBOL] = orders
