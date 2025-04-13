@@ -142,6 +142,14 @@ PARAMS = {
 
 
 class Trader:
+    
+    ENTRY_Z = 1.0
+    EMA_ALPHA = 2 / (100 + 1)
+    SPREAD_WINDOW = 200
+    QTY = 5
+    MAX_HOLD_TICKS = 10000000000000
+    MIN_HOLD_TICKS = 100
+
     def __init__(self, params=None):
         if params is None:
             params = PARAMS
@@ -363,6 +371,17 @@ class Trader:
         )
         return orders, buy_order_volume, sell_order_volume
 
+    def update_entry_price(symbol: str, trade_price: float, trade_qty: int, positions_data: dict, current_pos: int):
+        if symbol not in positions_data or current_pos == 0:
+            positions_data[symbol] = {"entry_price": trade_price, "entry_volume": abs(trade_qty)}
+        else:
+            entry = positions_data[symbol]
+            old_total = entry["entry_price"] * entry["entry_volume"]
+            new_total = trade_price * abs(trade_qty)
+            new_volume = entry["entry_volume"] + abs(trade_qty)
+            entry["entry_price"] = (old_total + new_total) / new_volume
+            entry["entry_volume"] = new_volume
+
     def make_orders(
         self,
         product,
@@ -432,110 +451,229 @@ class Trader:
 
         result = {}
 
+
         # Get mid prices
         def get_mid(order_depth: OrderDepth):
             if order_depth.buy_orders and order_depth.sell_orders:
                 return (max(order_depth.buy_orders.keys()) + min(order_depth.sell_orders.keys())) / 2
             return None
 
-        # if Product.RESIN in self.params and Product.RESIN in state.order_depths:
-        #     resin_position = (
-        #         state.position[Product.RESIN]
-        #         if Product.RESIN in state.position
-        #         else 0
-        #     )
-        #     resin_take_orders, buy_order_volume, sell_order_volume = (
-        #         self.take_orders(
-        #             Product.RESIN,
-        #             state.order_depths[Product.RESIN],
-        #             self.params[Product.RESIN]["fair_value"],
-        #             self.params[Product.RESIN]["take_width"],
-        #             resin_position,
-        #         )
-        #     )
-        #     resin_clear_orders, buy_order_volume, sell_order_volume = (
-        #         self.clear_orders(
-        #             Product.RESIN,
-        #             state.order_depths[Product.RESIN],
-        #             self.params[Product.RESIN]["fair_value"],
-        #             self.params[Product.RESIN]["clear_width"],
-        #             resin_position,
-        #             buy_order_volume,
-        #             sell_order_volume,
-        #         )
-        #     )
-        #     resin_make_orders, _, _ = self.make_orders(
-        #         Product.RESIN,
-        #         state.order_depths[Product.RESIN],
-        #         self.params[Product.RESIN]["fair_value"],
-        #         resin_position,
-        #         buy_order_volume,
-        #         sell_order_volume,
-        #         self.params[Product.RESIN]["disregard_edge"],
-        #         self.params[Product.RESIN]["join_edge"],
-        #         self.params[Product.RESIN]["default_edge"],
-        #         True,
-        #         self.params[Product.RESIN]["soft_position_limit"],
-        #     )
-        #     result[Product.RESIN] = (
-        #         resin_take_orders + resin_clear_orders + resin_make_orders
-        #     )
-
-        # if Product.KELP in self.params and Product.KELP in state.order_depths:
-        #     KELP_position = (
-        #         state.position[Product.KELP]
-        #         if Product.KELP in state.position
-        #         else 0
-        #     )
-        #     KELP_fair_value = self.KELP_fair_value(
-        #         state.order_depths[Product.KELP], traderObject
-        #     )
-        #     KELP_take_orders, buy_order_volume, sell_order_volume = (
-        #         self.take_orders(
-        #             Product.KELP,
-        #             state.order_depths[Product.KELP],
-        #             KELP_fair_value,
-        #             self.params[Product.KELP]["take_width"],
-        #             KELP_position,
-        #             self.params[Product.KELP]["prevent_adverse"],
-        #             self.params[Product.KELP]["adverse_volume"],
-        #         )
-        #     )
-        #     KELP_clear_orders, buy_order_volume, sell_order_volume = (
-        #         self.clear_orders(
-        #             Product.KELP,
-        #             state.order_depths[Product.KELP],
-        #             KELP_fair_value,
-        #             self.params[Product.KELP]["clear_width"],
-        #             KELP_position,
-        #             buy_order_volume,
-        #             sell_order_volume,
-        #         )
-        #     )
-        #     KELP_make_orders, _, _ = self.make_orders(
-        #         Product.KELP,
-        #         state.order_depths[Product.KELP],
-        #         KELP_fair_value,
-        #         KELP_position,
-        #         buy_order_volume,
-        #         sell_order_volume,
-        #         self.params[Product.KELP]["disregard_edge"],
-        #         self.params[Product.KELP]["join_edge"],
-        #         self.params[Product.KELP]["default_edge"],
-        #     )
-        #     result[Product.KELP] = (
-        #         KELP_take_orders + KELP_clear_orders + KELP_make_orders
-        #     )
-
         if Product.BASKET1 in self.params and Product.BASKET1 in state.order_depths:
-            basket1_mid = get_mid(state.order_depths[Product.BASKET1])
+
+            data = jsonpickle.decode(state.traderData) if state.traderData else {}
+            positions_data = data.get("positions", {})
+            hold_time = data.get("hold_time", 0)
+
+            
+            od = state.order_depths
+            pb1_mid = get_mid(od.get("PICNIC_BASKET1"))
+            croiss_mid = get_mid(od.get("CROISSANTS"))
+            jams_mid = get_mid(od.get("JAMS"))
+            djembes_mid = get_mid(od.get("DJEMBES"))
+
+            if None in [pb1_mid, croiss_mid, jams_mid, djembes_mid]:
+                logger.flush(state, result, conversions, jsonpickle.encode(data))
+                return result, conversions, jsonpickle.encode(data)
+
+            synthetic = 6 * croiss_mid + 3 * jams_mid + 1 * djembes_mid
+            spread = pb1_mid - synthetic
+
+            spread_hist = data.get("spread_hist", [])
+            spread_hist.append(spread)
+            if len(spread_hist) > self.SPREAD_WINDOW:
+                spread_hist.pop(0)
+            data["spread_hist"] = spread_hist
+
+            prev_ema = data.get("spread_ema")
+            ema = spread if prev_ema is None else self.EMA_ALPHA * spread + (1 - self.EMA_ALPHA) * prev_ema
+            data["spread_ema"] = ema
+
+            mean = np.mean(spread_hist)
+            std = np.std(spread_hist)
+            z = (spread - mean) / std if std > 0 else 0
+
+            logger.print(f"PB1: {pb1_mid:.1f}, SYN: {synthetic:.1f}, Spread: {spread:.1f}, EMA: {ema:.1f}, Z: {z:.2f}")
+
+            pos = state.position
+            pos_pb1 = pos.get("PICNIC_BASKET1", 0)
+            pos_croiss = pos.get("CROISSANTS", 0)
+            pos_jams = pos.get("JAMS", 0)
+            pos_djembes = pos.get("DJEMBES", 0)
+
+            open_position = sum(abs(p) for p in [pos_pb1, pos_croiss, pos_jams, pos_djembes]) > 0
+
+            # Time-based exit
+            if open_position:
+                hold_time += 1
+                if hold_time > self.MAX_HOLD_TICKS:
+                    # Log exit PnL before closing
+                    profit = 0
+                    for symbol, mid in [("PICNIC_BASKET1", pb1_mid), ("CROISSANTS", croiss_mid),
+                                        ("JAMS", jams_mid), ("DJEMBES", djembes_mid)]:
+                        position = pos.get(symbol, 0)
+                        entry = positions_data.get(symbol)
+                        if entry:
+                            entry_price = entry["entry_price"]
+                            profit += position * (mid - entry_price)
+                    logger.print(f"💸 Max-hold exit after {hold_time} ticks | PnL: {profit:.1f}")
+                    
+                    result["PICNIC_BASKET1"].append(Order("PICNIC_BASKET1", int(pb1_mid), -pos_pb1))
+                    result["CROISSANTS"].append(Order("CROISSANTS", int(croiss_mid), -pos_croiss))
+                    result["JAMS"].append(Order("JAMS", int(jams_mid), -pos_jams))
+                    result["DJEMBES"].append(Order("DJEMBES", int(djembes_mid), -pos_djembes))
+                    logger.print(f"⏱️ EXIT via MAX HOLD: {hold_time} ticks")
+            else:
+                hold_time = 0  # reset timer if fully flat
+
+            # Entry logic
+            if pos_pb1 == 0:
+                if z > self.ENTRY_Z:
+                    result["PICNIC_BASKET1"].append(Order("PICNIC_BASKET1", int(pb1_mid), -self.QTY))
+                    result["CROISSANTS"].append(Order("CROISSANTS", int(croiss_mid), 6 * self.QTY))
+                    result["JAMS"].append(Order("JAMS", int(jams_mid), 3 * self.QTY))
+                    result["DJEMBES"].append(Order("DJEMBES", int(djembes_mid), 1 * self.QTY))
+                    update_entry_price("PICNIC_BASKET1", pb1_mid, -self.QTY, positions_data, pos_pb1)
+                    update_entry_price("CROISSANTS", croiss_mid, 6 * self.QTY, positions_data, pos_croiss)
+                    update_entry_price("JAMS", jams_mid, 3 * self.QTY, positions_data, pos_jams)
+                    update_entry_price("DJEMBES", djembes_mid, 1 * self.QTY, positions_data, pos_djembes)
+                    data["last_direction"] = "short"
+
+                elif z < -self.ENTRY_Z:
+                    result["PICNIC_BASKET1"].append(Order("PICNIC_BASKET1", int(pb1_mid), self.QTY))
+                    result["CROISSANTS"].append(Order("CROISSANTS", int(croiss_mid), -6 * self.QTY))
+                    result["JAMS"].append(Order("JAMS", int(jams_mid), -3 * self.QTY))
+                    result["DJEMBES"].append(Order("DJEMBES", int(djembes_mid), -1 * self.QTY))
+                    update_entry_price("PICNIC_BASKET1", pb1_mid, self.QTY, positions_data, pos_pb1)
+                    update_entry_price("CROISSANTS", croiss_mid, -6 * self.QTY, positions_data, pos_croiss)
+                    update_entry_price("JAMS", jams_mid, -3 * self.QTY, positions_data, pos_jams)
+                    update_entry_price("DJEMBES", djembes_mid, -1 * self.QTY, positions_data, pos_djembes)
+                    data["last_direction"] = "long"
+
+            # EMA exit logic
+            elif hold_time >= self.MIN_HOLD_TICKS and (data.get("last_direction") == "short" and spread < ema) or (data.get("last_direction") == "long" and spread > ema):
+                # Log exit PnL before closing
+                profit = 0
+                for symbol, mid in [("PICNIC_BASKET1", pb1_mid), ("CROISSANTS", croiss_mid),
+                                    ("JAMS", jams_mid), ("DJEMBES", djembes_mid)]:
+                    position = pos.get(symbol, 0)
+                    entry = positions_data.get(symbol)
+                    if entry:
+                        entry_price = entry["entry_price"]
+                        profit += position * (mid - entry_price)
+
+                logger.print(f"💸 Exiting after {hold_time} ticks | PnL: {profit:.1f} | Z: {z:.2f}")
+                result["PICNIC_BASKET1"].append(Order("PICNIC_BASKET1", int(pb1_mid), -pos_pb1))
+                result["CROISSANTS"].append(Order("CROISSANTS", int(croiss_mid), -pos_croiss))
+                result["JAMS"].append(Order("JAMS", int(jams_mid), -pos_jams))
+                result["DJEMBES"].append(Order("DJEMBES", int(djembes_mid), -pos_djembes))
+                logger.print("🔁 EXIT via EMA crossover")
+
+            # Clear entry prices if out of position
+            for symbol in ["PICNIC_BASKET1", "CROISSANTS", "JAMS", "DJEMBES"]:
+                if state.position.get(symbol, 0) == 0:
+                    positions_data.pop(symbol, None)
+
+            data["positions"] = positions_data
+            data["hold_time"] = hold_time
+            trader_data = jsonpickle.encode(data)
+
+        if Product.RESIN in self.params and Product.RESIN in state.order_depths:
+            resin_position = (
+                state.position[Product.RESIN]
+                if Product.RESIN in state.position
+                else 0
+            )
+            resin_take_orders, buy_order_volume, sell_order_volume = (
+                self.take_orders(
+                    Product.RESIN,
+                    state.order_depths[Product.RESIN],
+                    self.params[Product.RESIN]["fair_value"],
+                    self.params[Product.RESIN]["take_width"],
+                    resin_position,
+                )
+            )
+            resin_clear_orders, buy_order_volume, sell_order_volume = (
+                self.clear_orders(
+                    Product.RESIN,
+                    state.order_depths[Product.RESIN],
+                    self.params[Product.RESIN]["fair_value"],
+                    self.params[Product.RESIN]["clear_width"],
+                    resin_position,
+                    buy_order_volume,
+                    sell_order_volume,
+                )
+            )
+            resin_make_orders, _, _ = self.make_orders(
+                Product.RESIN,
+                state.order_depths[Product.RESIN],
+                self.params[Product.RESIN]["fair_value"],
+                resin_position,
+                buy_order_volume,
+                sell_order_volume,
+                self.params[Product.RESIN]["disregard_edge"],
+                self.params[Product.RESIN]["join_edge"],
+                self.params[Product.RESIN]["default_edge"],
+                True,
+                self.params[Product.RESIN]["soft_position_limit"],
+            )
+            result[Product.RESIN] = (
+                resin_take_orders + resin_clear_orders + resin_make_orders
+            )
+
+        if Product.KELP in self.params and Product.KELP in state.order_depths:
+            KELP_position = (
+                state.position[Product.KELP]
+                if Product.KELP in state.position
+                else 0
+            )
+            KELP_fair_value = self.KELP_fair_value(
+                state.order_depths[Product.KELP], traderObject
+            )
+            KELP_take_orders, buy_order_volume, sell_order_volume = (
+                self.take_orders(
+                    Product.KELP,
+                    state.order_depths[Product.KELP],
+                    KELP_fair_value,
+                    self.params[Product.KELP]["take_width"],
+                    KELP_position,
+                    self.params[Product.KELP]["prevent_adverse"],
+                    self.params[Product.KELP]["adverse_volume"],
+                )
+            )
+            KELP_clear_orders, buy_order_volume, sell_order_volume = (
+                self.clear_orders(
+                    Product.KELP,
+                    state.order_depths[Product.KELP],
+                    KELP_fair_value,
+                    self.params[Product.KELP]["clear_width"],
+                    KELP_position,
+                    buy_order_volume,
+                    sell_order_volume,
+                )
+            )
+            KELP_make_orders, _, _ = self.make_orders(
+                Product.KELP,
+                state.order_depths[Product.KELP],
+                KELP_fair_value,
+                KELP_position,
+                buy_order_volume,
+                sell_order_volume,
+                self.params[Product.KELP]["disregard_edge"],
+                self.params[Product.KELP]["join_edge"],
+                self.params[Product.KELP]["default_edge"],
+            )
+            result[Product.KELP] = (
+                KELP_take_orders + KELP_clear_orders + KELP_make_orders
+            )
+
+        # if Product.BASKET2 in self.params and Product.BASKET2 in state.order_depths:
+            basket2_mid = get_mid(state.order_depths[Product.BASKET2])
             croiss_mid = get_mid(state.order_depths[Product.CROISSANTS])
             jams_mid = get_mid(state.order_depths[Product.JAMS])
-            djembes_mid = get_mid(state.order_depths[Product.DJEMBES])
 
-            if None not in [basket1_mid, croiss_mid, jams_mid, djembes_mid]:
-                synthetic_price = (6 * croiss_mid + 3 * jams_mid + 1 * djembes_mid)
-                spread = basket1_mid - synthetic_price
+            if None not in [basket2_mid, croiss_mid, jams_mid]:
+                synthetic_price = (4 * croiss_mid + 2 * jams_mid)
+                spread = basket2_mid - synthetic_price
 
                 spread_list = traderObject.get("spread_history", [])
                 spread_list.append(spread)
@@ -550,15 +688,13 @@ class Trader:
                 traderObject["z_score"] = z_score
 
                 # === Trading Logic ===
-                basket1_position = state.position.get(Product.BASKET1, 0)
+                basket2_position = state.position.get(Product.BASKET2, 0)
                 croiss_position = state.position.get(Product.CROISSANTS, 0)
                 jams_position = state.position.get(Product.JAMS, 0)
-                djembes_position = state.position.get(Product.DJEMBES, 0)
 
-                orders_basket1 = []
+                orders_basket2 = []
                 orders_croiss = []
                 orders_jams = []
-                orders_djembes = []
 
                 entry_threshold = 1.0
                 exit_threshold = 0.2
@@ -566,92 +702,28 @@ class Trader:
 
                 if z_score > entry_threshold:
                     # Short basket, long synthetic
-                    orders_basket1.append(Order(Product.BASKET1, int(basket1_mid), -qty))
-                    orders_croiss.append(Order(Product.CROISSANTS, int(croiss_mid), 6 * qty))
-                    orders_jams.append(Order(Product.JAMS, int(jams_mid), 3 * qty))
-                    orders_djembes.append(Order(Product.DJEMBES, int(djembes_mid), 1 * qty))
+                    orders_basket2.append(Order(Product.BASKET2, int(basket2_mid), -qty))
+                    orders_croiss.append(Order(Product.CROISSANTS, int(croiss_mid), 4 * qty))
+                    orders_jams.append(Order(Product.JAMS, int(jams_mid), 2 * qty))
 
                 elif z_score < -entry_threshold:
                     # Long basket, short synthetic
-                    orders_basket1.append(Order(Product.BASKET1, int(basket1_mid), qty))
-                    orders_croiss.append(Order(Product.CROISSANTS, int(croiss_mid), -6 * qty))
-                    orders_jams.append(Order(Product.JAMS, int(jams_mid), -3 * qty))
-                    orders_djembes.append(Order(Product.DJEMBES, int(djembes_mid), -1 * qty))
+                    orders_basket2.append(Order(Product.BASKET2, int(basket2_mid), qty))
+                    orders_croiss.append(Order(Product.CROISSANTS, int(croiss_mid), -4 * qty))
+                    orders_jams.append(Order(Product.JAMS, int(jams_mid), -2 * qty))
 
                 elif abs(z_score) < exit_threshold:
                     # Exit positions if any
-                    if basket1_position != 0:
-                        orders_basket1.append(Order(Product.BASKET1, int(basket1_mid), -basket1_position))
+                    if basket2_position != 0:
+                        orders_basket2.append(Order(Product.BASKET2, int(basket2_mid), -basket2_position))
                     if croiss_position != 0:
                         orders_croiss.append(Order(Product.CROISSANTS, int(croiss_mid), -croiss_position))
                     if jams_position != 0:
                         orders_jams.append(Order(Product.JAMS, int(jams_mid), -jams_position))
-                    if djembes_position != 0:
-                        orders_djembes.append(Order(Product.DJEMBES, int(djembes_mid), -djembes_position))
 
-                result[Product.BASKET1] = orders_basket1
+                result[Product.BASKET2] = orders_basket2
                 result[Product.CROISSANTS] = orders_croiss
                 result[Product.JAMS] = orders_jams
-                result[Product.DJEMBES] = orders_djembes
-
-        # if Product.BASKET2 in self.params and Product.BASKET2 in state.order_depths:
-        #     basket2_mid = get_mid(state.order_depths[Product.BASKET2])
-        #     croiss_mid = get_mid(state.order_depths[Product.CROISSANTS])
-        #     jams_mid = get_mid(state.order_depths[Product.JAMS])
-
-        #     if None not in [basket2_mid, croiss_mid, jams_mid]:
-        #         synthetic_price = (4 * croiss_mid + 2 * jams_mid)
-        #         spread = basket2_mid - synthetic_price
-
-        #         spread_list = traderObject.get("spread_history", [])
-        #         spread_list.append(spread)
-        #         if len(spread_list) > 100:
-        #             spread_list = spread_list[-100:]
-
-        #         spread_mean = np.mean(spread_list)
-        #         spread_std = np.std(spread_list) if np.std(spread_list) > 1e-6 else 1  # avoid div by 0
-        #         z_score = (spread - spread_mean) / spread_std
-
-        #         traderObject["spread_history"] = spread_list
-        #         traderObject["z_score"] = z_score
-
-        #         # === Trading Logic ===
-        #         basket2_position = state.position.get(Product.BASKET2, 0)
-        #         croiss_position = state.position.get(Product.CROISSANTS, 0)
-        #         jams_position = state.position.get(Product.JAMS, 0)
-
-        #         orders_basket2 = []
-        #         orders_croiss = []
-        #         orders_jams = []
-
-        #         entry_threshold = 1.0
-        #         exit_threshold = 0.2
-        #         qty = 1  # start simple
-
-        #         if z_score > entry_threshold:
-        #             # Short basket, long synthetic
-        #             orders_basket2.append(Order(Product.BASKET2, int(basket2_mid), -qty))
-        #             orders_croiss.append(Order(Product.CROISSANTS, int(croiss_mid), 4 * qty))
-        #             orders_jams.append(Order(Product.JAMS, int(jams_mid), 2 * qty))
-
-        #         elif z_score < -entry_threshold:
-        #             # Long basket, short synthetic
-        #             orders_basket2.append(Order(Product.BASKET2, int(basket2_mid), qty))
-        #             orders_croiss.append(Order(Product.CROISSANTS, int(croiss_mid), -4 * qty))
-        #             orders_jams.append(Order(Product.JAMS, int(jams_mid), -2 * qty))
-
-        #         elif abs(z_score) < exit_threshold:
-        #             # Exit positions if any
-        #             if basket2_position != 0:
-        #                 orders_basket2.append(Order(Product.BASKET2, int(basket2_mid), -basket2_position))
-        #             if croiss_position != 0:
-        #                 orders_croiss.append(Order(Product.CROISSANTS, int(croiss_mid), -croiss_position))
-        #             if jams_position != 0:
-        #                 orders_jams.append(Order(Product.JAMS, int(jams_mid), -jams_position))
-
-        #         result[Product.BASKET2] = orders_basket2
-        #         result[Product.CROISSANTS] = orders_croiss
-        #         result[Product.JAMS] = orders_jams
          
 
         conversions = 1
