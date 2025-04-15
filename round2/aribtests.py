@@ -26,6 +26,8 @@ class Trader():
             data = jsonpickle.decode(state.traderData)
         else:
             data = {}
+            
+        
 
         prods = ['CROISSANTS', 'JAMS', 'DJEMBES', 'PICNIC_BASKET1', 'PICNIC_BASKET2']
         
@@ -52,51 +54,56 @@ class Trader():
                 mid_prices[product] = (best_bids[product] + best_asks[product]) / 2
         
         residual_buy_one = mid_prices['PICNIC_BASKET1'] - 6 * mid_prices['CROISSANTS'] - 3 * mid_prices['JAMS'] - mid_prices['DJEMBES']
-        residual_buy_two = mid_prices['PICNIC_BASKET2'] - 4 * mid_prices['CROISSANTS'] - 2 * mid_prices['JAMS']
-        
+        residual_buy_two = mid_prices['PICNIC_BASKET2'] - 4 * mid_prices['CROISSANTS'] - 2 * mid_prices['JAMS'] + 70
         logger.print(f"Residuals → Basket1: {residual_buy_one:.2f}, Basket2: {residual_buy_two:.2f}")
         
         residual_sell_one = residual_buy_one
         residual_sell_two = residual_buy_two
         
+        # BASKET 1 SELL
+        curr_pos1 = state.position.get('PICNIC_BASKET1', 0)
         if residual_sell_one > self.BASKET1_TRADE_AT:
-            vol = state.position.get('PICNIC_BASKET1', 0) + self.BASKET1_MAX_POS
+            vol = max(0, self.BASKET1_MAX_POS + curr_pos1)
             logger.print(f"Basket1 Sell Signal: residual {residual_sell_one:.2f} > threshold {self.BASKET1_TRADE_AT:.2f}, vol: {vol}")
-            assert vol >= 0
             if vol > 0:
-                orders['PICNIC_BASKET1'].append(Order('PICNIC_BASKET1', worst_asks['PICNIC_BASKET1'], -vol))
-                logger.print(f"→ SELL PICNIC_BASKET1 | Qty: {vol} @ Price: {worst_asks['PICNIC_BASKET1']}")
+                orders['PICNIC_BASKET1'].append(Order('PICNIC_BASKET1', worst_bids['PICNIC_BASKET1'], -vol))
+                logger.print(f"→ SELL PICNIC_BASKET1 | Qty: {vol} @ Price: {worst_bids['PICNIC_BASKET1']}")
 
+        # BASKET 1 BUY
         if residual_buy_one < -self.BASKET1_TRADE_AT:
-            vol = self.BASKET1_MAX_POS - state.position.get('PICNIC_BASKET1', 0)
+            vol = max(0, self.BASKET1_MAX_POS - curr_pos1)
             logger.print(f"Basket1 Buy Signal: residual {residual_buy_one:.2f} < -threshold {-self.BASKET1_TRADE_AT:.2f}, vol: {vol}")
-            assert vol >= 0
             if vol > 0:
-                orders['PICNIC_BASKET1'].append(Order('PICNIC_BASKET1', worst_bids['PICNIC_BASKET1'], vol))
-                logger.print(f"→ BUY PICNIC_BASKET1 | Qty: {vol} @ Price: {worst_bids['PICNIC_BASKET1']}")
+                orders['PICNIC_BASKET1'].append(Order('PICNIC_BASKET1', worst_asks['PICNIC_BASKET1'], vol))
+                logger.print(f"→ BUY PICNIC_BASKET1 | Qty: {vol} @ Price: {worst_asks['PICNIC_BASKET1']}")
 
+        # BASKET 2 SELL
+        curr_pos2 = state.position.get('PICNIC_BASKET2', 0)
         if residual_sell_two > self.BASKET2_TRADE_AT:
-            vol = state.position.get('PICNIC_BASKET2', 0) + self.BASKET2_MAX_POS
+            
+            position = state.position.get('PICNIC_BASKET2', 0)
+            logger.print(f"Current position for PICNIC_BASKET2: {position}")
+            
+            vol = max(0, self.BASKET2_MAX_POS + curr_pos2)
             logger.print(f"Basket2 Sell Signal: residual {residual_sell_two:.2f} > threshold {self.BASKET2_TRADE_AT:.2f}, vol: {vol}")
-            assert vol >= 0
             if vol > 0:
-                orders['PICNIC_BASKET2'].append(Order('PICNIC_BASKET2', worst_asks['PICNIC_BASKET2'], -vol))
-                logger.print(f"→ SELL PICNIC_BASKET2 | Qty: {vol} @ Price: {worst_asks['PICNIC_BASKET2']}")
+                orders['PICNIC_BASKET2'].append(Order('PICNIC_BASKET2', worst_bids['PICNIC_BASKET2'], -vol))
+                logger.print(f"→ SELL PICNIC_BASKET2 | Qty: {vol} @ Price: {worst_bids['PICNIC_BASKET2']}")
 
+        # BASKET 2 BUY
         if residual_buy_two < -self.BASKET2_TRADE_AT:
-            vol = self.BASKET2_MAX_POS - state.position.get('PICNIC_BASKET2', 0)
+            vol = max(0, self.BASKET2_MAX_POS - curr_pos2)
             logger.print(f"Basket2 Buy Signal: residual {residual_buy_two:.2f} < -threshold {-self.BASKET2_TRADE_AT:.2f}, vol: {vol}")
-            assert vol >= 0
             if vol > 0:
-                orders['PICNIC_BASKET2'].append(Order('PICNIC_BASKET2', worst_bids['PICNIC_BASKET2'], vol))
-                logger.print(f"→ BUY PICNIC_BASKET2 | Qty: {vol} @ Price: {worst_bids['PICNIC_BASKET2']}")
-
+                orders['PICNIC_BASKET2'].append(Order('PICNIC_BASKET2', worst_asks['PICNIC_BASKET2'], vol))
+                logger.print(f"→ BUY PICNIC_BASKET2 | Qty: {vol} @ Price: {worst_asks['PICNIC_BASKET2']}")
+        
+        result = orders
+        
         trader_data = jsonpickle.encode(data)
         logger.flush(state, result, conversions, trader_data)
         
-        result = orders
         return result, conversions, trader_data
-
 # --- Logger Setup (for Prosperity 3 Visualizer) ---
 
 class Logger:
