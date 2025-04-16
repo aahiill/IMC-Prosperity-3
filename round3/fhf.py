@@ -10,7 +10,6 @@ from scipy.stats import norm
 class Trader:
     CURRENT_DAY = 2  # change to 1 or 2 before each backtest
     VOUCHERS = {
-        "VOLCANIC_ROCK_VOUCHER_10250": 10250,
         "VOLCANIC_ROCK_VOUCHER_10500": 10500,
     }
     TICKS_PER_DAY = 10_000
