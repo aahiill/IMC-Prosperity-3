@@ -505,7 +505,6 @@ class Trader:
 
             # clears all entry data if we've exited a position in previous tick and position is now confirmed as 0
             if position == 0 and pos_data["entry_price"] is not None:
-                logger.print(f"{symbol} position closed, resetting.")
                 pos_data = {"entry_price": None, "entry_side": None}
                 data["pending_entry"][symbol] = None
 
@@ -527,11 +526,9 @@ class Trader:
                 if z < -entry_threshold and position < limit:
                     orders[symbol].append(Order(symbol, ask, capped_qty))
                     data["pending_entry"][symbol] = {"side": "long", "price": ask}
-                    logger.print(f"📥 {symbol} LONG @ {ask} | Qty: {capped_qty}")
                 elif z > entry_threshold and position > -limit:
                     orders[symbol].append(Order(symbol, bid, -capped_qty))
                     data["pending_entry"][symbol] = {"side": "short", "price": bid}
-                    logger.print(f"📥 {symbol} SHORT @ {bid} | Qty: {capped_qty}")
 
             if (
                 position != 0
@@ -541,9 +538,6 @@ class Trader:
                 entry = data["pending_entry"].pop(symbol)
                 pos_data["entry_price"] = entry["price"]
                 pos_data["entry_side"] = entry["side"]
-                logger.print(
-                    f"✅ {symbol} entry confirmed | {entry['side']} @ {entry['price']}"
-                )
 
             unreal = 0
             if pos_data["entry_price"] is not None:
@@ -566,9 +560,7 @@ class Trader:
             if should_exit:
                 exit_price = bid if position > 0 else ask
                 orders[symbol].append(Order(symbol, exit_price, -position))
-                logger.print(
-                    f"💣 {symbol} EXIT @ {exit_price} | Pos: {position} | Unreal: {unreal:.1f}"
-                )
+
 
         return orders, data
 
