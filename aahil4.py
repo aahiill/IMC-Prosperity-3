@@ -180,7 +180,7 @@ class Trader:
         conversions = 0
 
         # Force close at 900_000
-        stop_trading = timestamp >= 900_000
+        stop_trading = (timestamp % 900_000) <= (timestamp // 900_000) * 100_000
 
         for product in self.params:
             if product not in state.order_depths:
