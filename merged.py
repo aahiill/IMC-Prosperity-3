@@ -11,6 +11,7 @@ All trading is executed in one Trader class’s run() method.
 Helper methods are used to keep the code modular and easy to follow.
 """
 
+import statistics
 from datamodel import (
     Order,
     OrderDepth,
@@ -133,6 +134,8 @@ class Product:
     V9750 = {"SYMBOL": "VOLCANIC_ROCK_VOUCHER_9750", "LIMIT": 200}
     V10000 = {"SYMBOL": "VOLCANIC_ROCK_VOUCHER_10000", "LIMIT": 200}
     V10250 = {"SYMBOL": "VOLCANIC_ROCK_VOUCHER_10250", "LIMIT": 200}
+    V10500 = {"SYMBOL": "VOLCANIC_ROCK_VOUCHER_10500", "LIMIT": 200}
+    MACRONS = {"SYMBOL": "MAGNIFICENT_MACARONS", "LIMIT": 75}
 
 
 PARAMS = {
@@ -180,12 +183,15 @@ class Trader:
 
         # Execute each strategy sequentially, merging orders:
         orders_vrock, vrock_data = self.trade_volcanic(state)
+        orders_vrock_short, _ = self.trade_volc_short(state)
         orders_kelp, kelp_data = self.trade_kelp(state)
         orders_resin, resin_data = self.trade_resin(state)
         orders_pb1, pb1_data = self.trade_pb1(state)
         orders_pb2, pb2_data = self.trade_pb2(state)
         orders_squid, squid_data = self.trade_squid(state)
-
+        orders_pb1_nav, pb1_nav_data = self.trade_pb1_nav(state)
+        orders_macrons, macrons_data = self.trade_macrons(state)
+        
         # Merging data and orders from all strategies
         data["volcanic"] = vrock_data
         data["kelp"] = kelp_data
@@ -193,22 +199,27 @@ class Trader:
         data["squid"] = squid_data
         data["pb1"] = pb1_data
         data["pb2"] = pb2_data
+        data["pb1_nav"] = pb1_nav_data
+        data["macrons"] = macrons_data
 
         orders = (
             orders_vrock
+            | orders_vrock_short
             | orders_kelp
             | orders_resin
             | orders_pb1
             | orders_pb2
             | orders_squid
+            | orders_pb1_nav
+            | orders_macrons
         )
-
+        
         trader_data = jsonpickle.encode(data)
         logger.flush(state, orders, conversions, trader_data)
         return orders, conversions, trader_data
 
     # ------- HELPER METHODS -------
-    
+
     def take_best_orders(
         self,
         product: str,
@@ -424,7 +435,7 @@ class Trader:
         ask = min(order_depth.sell_orders.keys())
         return (bid + ask) / 2
 
-    # ------- VOLANIC ROCK & VOUCHERS -------
+    # ------- VOLANIC ROCK & CLOSELY FOLLOWING VOUCHERS -------
 
     # takes TradingState and returns order dict and the volcanic data dictionary
     def trade_volcanic(
@@ -560,8 +571,47 @@ class Trader:
                 exit_price = bid if position > 0 else ask
                 orders[symbol].append(Order(symbol, exit_price, -position))
 
-
         return orders, data
+
+    # ------- OTM VOLCANIC ROCK VOUCHERS -------
+
+    def trade_volc_short(
+        self, state: TradingState
+    ) -> Tuple[Dict[str, List[Order]], Dict[str, Any]]:
+        """
+        Just straight up shorts the OTM vouchers to max pos limit and keeps the position there.
+        """
+        orders = {}
+        instruments = [Product.V10250, Product.V10500]
+
+        for each in instruments:
+            symbol = each["SYMBOL"]
+            logger.print(f"symbol is {symbol}")
+            orders[symbol] = []
+
+            position = state.position.get(symbol, 0)
+            position_limit = each["LIMIT"]
+
+            # Skip if already fully short
+            if position <= -position_limit:
+                logger.print("position v shorting already full")
+                continue
+
+            depth = state.order_depths.get(symbol)
+            if not depth or not depth.buy_orders:
+                logger.print("no depth")
+                continue
+
+            best_bid = max(depth.buy_orders.keys())
+            available_vol = abs(depth.buy_orders[best_bid])
+            shortable_qty = min(position_limit + position, available_vol)
+
+            if shortable_qty > 0:
+                logger.print('shorting')
+                orders[symbol].append(Order(symbol, best_bid, -shortable_qty))
+
+        return orders, {}
+
 
     # ------- SQUID INK -------
 
@@ -638,11 +688,17 @@ class Trader:
 
         return orders, data
 
-    # ------- PICNIC BASKET 1 + UNDERLYING -------
+    # ------- UNDERLYING OF PICNIC BASKET 1 (Croissants, Jam, Djembes) -------
 
-    def trade_pb1(
+    def trade_pb1_nav(
         self, state: TradingState
     ) -> Tuple[Dict[str, List[Order]], Dict[str, Any]]:
+        """
+        Originally traded both PB1 and its underlying (hedging + stat arb).
+        We observed that PB1 would almost never make any money, whilst the underlying
+        would profit (hit or miss), so now this only trades the underlying (but using
+        the same logic and signal as if it were trading PB1 as well)."""
+
         # helper function to update entry prices (only used in the scope of trade_pb1)
         def update_entry_price(
             symbol: str,
@@ -674,7 +730,7 @@ class Trader:
 
         # SETUP (data stuff)
         rawdata = jsonpickle.decode(state.traderData) if state.traderData else {}
-        data = rawdata.setdefault("pb1", {})
+        data = rawdata.setdefault("pb1_nav", {})
         positions_data = data.setdefault("positions", {})
         hold_time = data.setdefault("hold_time", 0)
 
@@ -682,7 +738,6 @@ class Trader:
         orders = {
             s: []
             for s in [
-                Product.BASKET1["SYMBOL"],
                 Product.CROISSANTS["SYMBOL"],
                 Product.JAMS["SYMBOL"],
                 Product.DJEMBES["SYMBOL"],
@@ -722,13 +777,12 @@ class Trader:
 
         # POSITION MANAGEMENT
         pos = state.position
-        pos_pb1 = pos.get(Product.BASKET1["SYMBOL"], 0)
         pos_croiss = pos.get(Product.CROISSANTS["SYMBOL"], 0)
         pos_jams = pos.get(Product.JAMS["SYMBOL"], 0)
         pos_djembes = pos.get(Product.DJEMBES["SYMBOL"], 0)
 
         open_position = (
-            sum(abs(p) for p in [pos_pb1, pos_croiss, pos_jams, pos_djembes]) > 0
+            sum(abs(p) for p in [pos_croiss, pos_jams, pos_djembes]) > 0
         )
 
         # Time-based exit
@@ -738,7 +792,6 @@ class Trader:
                 # Log exit PnL before closing
                 profit = 0
                 for symbol, mid in [
-                    (Product.BASKET1["SYMBOL"], pb1_mid),
                     (Product.CROISSANTS["SYMBOL"], croiss_mid),
                     (Product.JAMS["SYMBOL"], jams_mid),
                     (Product.DJEMBES["SYMBOL"], djembes_mid),
@@ -749,9 +802,6 @@ class Trader:
                         entry_price = entry["entry_price"]
                         profit += position * (mid - entry_price)
 
-                orders["PICNIC_BASKET1"].append(
-                    Order(Product.BASKET1["SYMBOL"], int(pb1_mid), -pos_pb1)
-                )
                 orders["CROISSANTS"].append(
                     Order(Product.CROISSANTS["SYMBOL"], int(croiss_mid), -pos_croiss)
                 )
@@ -766,86 +816,72 @@ class Trader:
             hold_time = 0  # reset hold time if we're finally flat]
 
         # ENTRY LOGIC
-        if pos_pb1 == 0:
-            if z > ENTRY_Z:
-                orders["PICNIC_BASKET1"].append(
-                    Order(Product.BASKET1["SYMBOL"], int(pb1_mid), -QTY)
-                )
-                orders["CROISSANTS"].append(
-                    Order(Product.CROISSANTS["SYMBOL"], int(croiss_mid), 6 * QTY)
-                )
-                orders["JAMS"].append(
-                    Order(Product.JAMS["SYMBOL"], int(jams_mid), 3 * QTY)
-                )
-                orders["DJEMBES"].append(
-                    Order(Product.DJEMBES["SYMBOL"], int(djembes_mid), 1 * QTY)
-                )
-                update_entry_price(
-                    Product.BASKET1["SYMBOL"], pb1_mid, -QTY, positions_data, pos_pb1
-                )
-                update_entry_price(
-                    Product.CROISSANTS["SYMBOL"],
-                    croiss_mid,
-                    6 * QTY,
-                    positions_data,
-                    pos_croiss,
-                )
-                update_entry_price(
-                    Product.JAMS["SYMBOL"], jams_mid, 3 * QTY, positions_data, pos_jams
-                )
-                update_entry_price(
-                    Product.DJEMBES["SYMBOL"],
-                    djembes_mid,
-                    1 * QTY,
-                    positions_data,
-                    pos_djembes,
-                )
-                data["last_direction"] = "short"
+        if z > ENTRY_Z:
+            orders["CROISSANTS"].append(
+                Order(Product.CROISSANTS["SYMBOL"], int(croiss_mid), 6 * QTY)
+            )
+            orders["JAMS"].append(
+                Order(Product.JAMS["SYMBOL"], int(jams_mid), 3 * QTY)
+            )
+            orders["DJEMBES"].append(
+                Order(Product.DJEMBES["SYMBOL"], int(djembes_mid), 1 * QTY)
+            )
+            update_entry_price(
+                Product.CROISSANTS["SYMBOL"],
+                croiss_mid,
+                6 * QTY,
+                positions_data,
+                pos_croiss,
+            )
+            update_entry_price(
+                Product.JAMS["SYMBOL"], jams_mid, 3 * QTY, positions_data, pos_jams
+            )
+            update_entry_price(
+                Product.DJEMBES["SYMBOL"],
+                djembes_mid,
+                1 * QTY,
+                positions_data,
+                pos_djembes,
+            )
+            data["last_direction"] = "short"
 
-            elif z < -ENTRY_Z:
-                orders["PICNIC_BASKET1"].append(
-                    Order(Product.BASKET1["SYMBOL"], int(pb1_mid), QTY)
-                )
-                orders["CROISSANTS"].append(
-                    Order(Product.CROISSANTS["SYMBOL"], int(croiss_mid), -6 * QTY)
-                )
-                orders["JAMS"].append(
-                    Order(Product.JAMS["SYMBOL"], int(jams_mid), -3 * QTY)
-                )
-                orders["DJEMBES"].append(
-                    Order(Product.DJEMBES["SYMBOL"], int(djembes_mid), -1 * QTY)
-                )
-                update_entry_price(
-                    Product.BASKET1["SYMBOL"], pb1_mid, QTY, positions_data, pos_pb1
-                )
-                update_entry_price(
-                    Product.CROISSANTS["SYMBOL"],
-                    croiss_mid,
-                    -6 * QTY,
-                    positions_data,
-                    pos_croiss,
-                )
-                update_entry_price(
-                    Product.JAMS["SYMBOL"], jams_mid, -3 * QTY, positions_data, pos_jams
-                )
-                update_entry_price(
-                    Product.DJEMBES["SYMBOL"],
-                    djembes_mid,
-                    -1 * QTY,
-                    positions_data,
-                    pos_djembes,
-                )
-                data["last_direction"] = "long"
+        elif z < -ENTRY_Z:
+            orders["CROISSANTS"].append(
+                Order(Product.CROISSANTS["SYMBOL"], int(croiss_mid), -6 * QTY)
+            )
+            orders["JAMS"].append(
+                Order(Product.JAMS["SYMBOL"], int(jams_mid), -3 * QTY)
+            )
+            orders["DJEMBES"].append(
+                Order(Product.DJEMBES["SYMBOL"], int(djembes_mid), -1 * QTY)
+            )
+            update_entry_price(
+                Product.CROISSANTS["SYMBOL"],
+                croiss_mid,
+                -6 * QTY,
+                positions_data,
+                pos_croiss,
+            )
+            update_entry_price(
+                Product.JAMS["SYMBOL"], jams_mid, -3 * QTY, positions_data, pos_jams
+            )
+            update_entry_price(
+                Product.DJEMBES["SYMBOL"],
+                djembes_mid,
+                -1 * QTY,
+                positions_data,
+                pos_djembes,
+            )
+            data["last_direction"] = "long"
 
         # EMA EXIT LOGIC
-        elif hold_time >= MIN_HOLD_TICKS and (
+        if hold_time >= MIN_HOLD_TICKS and (
             (data.get("last_direction") == "short" and spread < ema)
             or (data.get("last_direction") == "long" and spread > ema)
         ):
             # Log exit PnL before closing
             profit = 0
             for symbol, mid in [
-                (Product.BASKET1["SYMBOL"], pb1_mid),
                 (Product.CROISSANTS["SYMBOL"], croiss_mid),
                 (Product.JAMS["SYMBOL"], jams_mid),
                 (Product.DJEMBES["SYMBOL"], djembes_mid),
@@ -856,9 +892,6 @@ class Trader:
                     entry_price = entry["entry_price"]
                     profit += position * (mid - entry_price)
 
-            orders["PICNIC_BASKET1"].append(
-                Order(Product.BASKET1["SYMBOL"], int(pb1_mid), -pos_pb1)
-            )
             orders["CROISSANTS"].append(
                 Order(Product.CROISSANTS["SYMBOL"], int(croiss_mid), -pos_croiss)
             )
@@ -871,7 +904,6 @@ class Trader:
 
         # Clear entry prices if out of position
         for symbol in [
-            Product.BASKET1["SYMBOL"],
             Product.CROISSANTS["SYMBOL"],
             Product.JAMS["SYMBOL"],
             Product.DJEMBES["SYMBOL"],
@@ -883,6 +915,97 @@ class Trader:
         data["hold_time"] = hold_time
         return orders, data
 
+    # ------- PICNIC BASKET 1 -------
+
+    def trade_pb1(
+        self, state: TradingState
+    ) -> Tuple[Dict[str, List[Order]], Dict[str, Any]]:
+        """
+        Trades PB1 through market making. Uses layered bids and asks
+        as well as position unwinding and skewing based on inventory.
+        Edge (how far into spread we quote) is determined via volatility."""
+
+        # CONFIGURABLE PARAMETERS
+        SYMBOL = Product.BASKET1["SYMBOL"]
+        POSITION_LIMIT = Product.BASKET1["LIMIT"]
+        BASE_ORDER_SIZE = 10
+        BASE_EDGE = 3
+        UNWIND_THRESHOLD = 0.2
+        UNWIND_WINDOW = 0
+        NUM_LAYERS = 3
+        VOL_WINDOW = 20
+
+        orders = {}
+        order_depth = state.order_depths.get(SYMBOL)
+        position = state.position.get(SYMBOL, 0)
+        rawdata = jsonpickle.decode(state.traderData) if state.traderData else {}
+        data = rawdata.setdefault("pb1", {})
+
+        if not order_depth or not order_depth.buy_orders or not order_depth.sell_orders:
+            return orders, data
+        
+        best_bid = max(order_depth.buy_orders.keys())
+        best_ask = min(order_depth.sell_orders.keys())
+        mid_price = (best_bid + best_ask) / 2
+
+        # Track recent mid prices for volatility estimation
+        history = data.setdefault("history", [])
+        history.append(mid_price)
+        if len(history) > VOL_WINDOW:
+            history.pop(0)
+        data["history"] = history
+
+        # Estimate volatility as a std of recent mid prices
+        volatility = statistics.stdev(history) if len(history) >= 2 else 1
+        dynamic_edge = BASE_EDGE + int(volatility / 10)
+
+        ticks_left = 1_000_000 - (state.timestamp % 1_000_000)
+        nearing_eod = ticks_left < UNWIND_WINDOW
+        high_exposure = abs(position) >= POSITION_LIMIT * UNWIND_THRESHOLD
+
+        orders = []
+
+        if position != 0 and (nearing_eod or high_exposure):
+            if position > 0:
+                orders.append(Order(SYMBOL, best_bid, -position))
+            else:
+                orders.append(Order(SYMBOL, best_ask, -position))
+        else:
+            position_skew = position / POSITION_LIMIT
+            max_skew = 1.5
+            price_skew = int(max_skew * position_skew)
+
+            for layer in range(1, NUM_LAYERS + 1):
+                edge = dynamic_edge + layer
+                bid_price = int(mid_price - edge + price_skew)
+                ask_price = int(mid_price + edge + price_skew)
+
+                if layer == 1:
+                    bid_price = min(bid_price, best_ask - 1)
+                    ask_price = max(ask_price, best_bid + 1)
+                
+                layer_size = max(1, int(BASE_ORDER_SIZE / layer))
+
+                buy_cap = POSITION_LIMIT - position
+                sell_cap = POSITION_LIMIT + position
+
+                bid_size = min(layer_size, buy_cap)
+                ask_size = min(layer_size, sell_cap)
+
+                if bid_size > 0:
+                    orders.append(Order(SYMBOL, bid_price, bid_size))
+                    logger.print(f"📥 Layered BID {bid_size} @ {bid_price}")
+
+                if ask_size > 0:
+                    orders.append(Order(SYMBOL, ask_price, -ask_size))
+                    logger.print(f"📤 Layered ASK {ask_size} @ {ask_price}")
+
+        final = {}
+        final[SYMBOL] = orders
+
+        return final, data
+
+   
     # ------- PICNIC BASKET 2 -------
 
     def trade_pb2(
@@ -1064,4 +1187,96 @@ class Trader:
             PARAMS[SYMBOL]["soft_position_limit"],
         )
         orders[SYMBOL] = resin_take_orders + resin_clear_orders + resin_make_orders
+        return orders, data
+
+    # ------- MAGNIFICENT MACRONS -------
+
+    def trade_macrons(
+            self, state: TradingState
+        ) -> Tuple[Dict[str, List[Order]], Dict[str, Any]]:
+        """
+        Market making with macrons"""
+
+        # CONFIGURABLE PARAMETERS
+        PRODUCT = Product.MACRONS["SYMBOL"]
+        POSITION_LIMIT = Product.MACRONS["LIMIT"]
+        BASE_ORDER_SIZE = 20
+        BASE_EDGE = 3
+        UNWIND_THRESHOLD = 0.3
+        UNWIND_WINDOW = 30_000
+        NUM_LAYERS = 3
+        VOL_WINDOW = 20
+
+        # setup
+        orders: dict[str, List[Order]] = {}
+        order_depth = state.order_depths.get(PRODUCT)
+        position = state.position.get(PRODUCT, 0)
+        rawdata = jsonpickle.decode(state.traderData) if state.traderData else {}
+        data = rawdata.setdefault("macrons", {})
+
+
+        if not order_depth or not order_depth.buy_orders or not order_depth.sell_orders:
+            return orders, data
+
+        best_bid = max(order_depth.buy_orders.keys())
+        best_ask = min(order_depth.sell_orders.keys())
+        mid_price = (best_bid + best_ask) / 2
+
+        # Track recent mid prices for volatility estimation
+        history = data.setdefault("history", [])
+        history.append(mid_price)
+        if len(history) > VOL_WINDOW:
+            history.pop(0)
+        data["history"] = history
+
+        # Estimate volatility as standard deviation of recent mid prices
+        volatility = statistics.stdev(history) if len(history) >= 2 else 1
+        dynamic_edge = BASE_EDGE + int(volatility / 5)
+
+        ticks_left = 1_000_000 - (state.timestamp % 1_000_000)
+        nearing_eod = ticks_left <= UNWIND_WINDOW
+        high_exposure = abs(position) >= POSITION_LIMIT * UNWIND_THRESHOLD
+
+        symbol_orders = []
+
+        if position != 0 and (nearing_eod or high_exposure):
+            if position > 0:
+                symbol_orders.append(Order(PRODUCT, best_bid, -position))
+                logger.print(f"🔻 Flattening LONG @ {best_bid} for {position}")
+            else:
+                symbol_orders.append(Order(PRODUCT, best_ask, -position))
+                logger.print(f"🔺 Flattening SHORT @ {best_ask} for {position}")
+        else:
+            position_skew = position / POSITION_LIMIT
+            max_skew = 1.5
+            price_skew = int(max_skew * position_skew)
+
+            for layer in range(1, NUM_LAYERS + 1):
+                edge = dynamic_edge + layer
+                bid_price = int(mid_price - edge + price_skew)
+                ask_price = int(mid_price + edge + price_skew)
+
+                if layer == 1:
+                    bid_price = min(bid_price, best_ask - 1)
+                    ask_price = max(ask_price, best_bid + 1)
+
+                layer_size = max(1, int(BASE_ORDER_SIZE / layer))
+
+                buy_cap = POSITION_LIMIT - position
+                sell_cap = POSITION_LIMIT + position
+
+                bid_size = min(layer_size, buy_cap)
+                ask_size = min(layer_size, sell_cap)
+
+                if bid_size > 0:
+                    symbol_orders.append(Order(PRODUCT, bid_price, bid_size))
+                    logger.print(f"📥 Layered BID {bid_size} @ {bid_price}")
+
+                if ask_size > 0:
+                    symbol_orders.append(Order(PRODUCT, ask_price, -ask_size))
+                    logger.print(f"📤 Layered ASK {ask_size} @ {ask_price}")
+
+        orders[PRODUCT] = symbol_orders
+
+        
         return orders, data
