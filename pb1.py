@@ -165,6 +165,7 @@ class Trader:
         self.premium_history: Dict[int, float] = {}
         self.synthetic_history: Dict[int, float] = {}
         self.actual_history: Dict[int, float] = {}
+        
     
     def run(self, state: TradingState) -> Tuple[Dict[str, List[Order]], int, str]:
         conversions = 0
@@ -181,6 +182,14 @@ class Trader:
             self.synthetic_history[state.timestamp] = pb1_data["synthetic_price"]
         if "actual_price" in pb1_data:
             self.actual_history[state.timestamp] = pb1_data["actual_price"]
+
+        if state.timestamp == 999_900:
+            save_spread_csv(
+                self.premium_history,
+                self.synthetic_history,
+                self.actual_history,
+                filename="pb1_spread",
+            )
 
         traderData = jsonpickle.encode(data)
         logger.flush(state, orders, conversions, traderData)
@@ -229,6 +238,7 @@ class Trader:
         data["premium"] = premium
 
         margin = 30
+        available_size = 1
         pb1_orders, croiss_orders, jams_orders, djem_orders = [], [], [], [] 
 
         # If PB1 is undervalued: buy PB1, sell components
@@ -239,11 +249,12 @@ class Trader:
             croiss_bid_price, _ = self.get_best_bid(croiss_depth)
             jams_bid_price, _ = self.get_best_bid(jams_depth)
             djem_bid_price, _ = self.get_best_bid(djem_depth)
+    
 
-            pb1_orders.append(Order(BASKET1, best_ask_price, 1))
-            croiss_orders.append(Order(CROISSANTS, croiss_bid_price, -CROISSANTS_WEIGHT))
-            jams_orders.append(Order(JAMS, jams_bid_price, -JAMS_WEIGHT))
-            djem_orders.append(Order(DJEMBES, djem_bid_price, -DJEMBES_WEIGHT))
+            pb1_orders.append(Order(BASKET1, best_ask_price, available_size))
+            croiss_orders.append(Order(CROISSANTS, croiss_bid_price, -available_size * CROISSANTS_WEIGHT))
+            jams_orders.append(Order(JAMS, jams_bid_price, -available_size * JAMS_WEIGHT))
+            djem_orders.append(Order(DJEMBES, djem_bid_price, -available_size * DJEMBES_WEIGHT))
 
         # If PB1 is overvalued: sell PB1, buy components
         elif actual_price - margin > synthetic_price:
@@ -254,10 +265,10 @@ class Trader:
             jams_ask_price, _ = self.get_best_ask(jams_depth)
             djem_ask_price, _ = self.get_best_ask(djem_depth)
 
-            pb1_orders.append(Order(BASKET1, best_bid_price, -1))
-            croiss_orders.append(Order(CROISSANTS, croiss_ask_price, CROISSANTS_WEIGHT))
-            jams_orders.append(Order(JAMS, jams_ask_price, JAMS_WEIGHT))
-            djem_orders.append(Order(DJEMBES, djem_ask_price, DJEMBES_WEIGHT))
+            pb1_orders.append(Order(BASKET1, best_bid_price, -available_size))
+            croiss_orders.append(Order(CROISSANTS, croiss_ask_price, available_size * CROISSANTS_WEIGHT))
+            jams_orders.append(Order(JAMS, jams_ask_price, available_size * JAMS_WEIGHT))
+            djem_orders.append(Order(DJEMBES, djem_ask_price, available_size * DJEMBES_WEIGHT))
 
         else:
             data["action"] = "hold"
@@ -292,6 +303,20 @@ class Trader:
             return 0.0
         return (best_bid_price + best_ask_price) / 2.0
 
+    def get_mid_price(self, order_depth: OrderDepth, side: str = "both", levels: int = 3) -> float:
+        prices = []
+        best_bid_price, _ = self.get_best_bid(order_depth)
+        best_ask_price, _ = self.get_best_ask(order_depth)
+        if best_bid_price == 0 or best_ask_price == float("inf"):
+            return 0.0
+        if side in ("buy", "both"):
+            for price, volume in sorted(order_depth.buy_orders.items(), reverse=True)[:levels]:
+                prices.extend([price] * abs(volume))
+        if side in ("sell", "both"):
+            for price, volume in sorted(order_depth.sell_orders.items())[:levels]:
+                prices.extend([price] * abs(volume))
+        return sum(prices) / len(prices)
+
     def synth_basket(self, state: TradingState) -> float:
         """
         Calculate the synthetic price of PB1 using its underlying components.
@@ -319,4 +344,26 @@ class Trader:
 
         return synthetic_price
 
-    
+
+import matplotlib.pyplot as plt
+import csv
+import os
+
+def save_spread_csv(
+    premium_history: Dict[int, float],
+    synthetic_history: Dict[int, float],
+    actual_history: Dict[int, float],
+    filename: str,
+    folder: str = "spread_data"
+) -> None:
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, f"{filename}.csv")
+
+    with open(path, mode="w", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(["timestamp", "synthetic_price", "actual_price", "spread"])
+        for t in sorted(premium_history.keys()):
+            synth = synthetic_history.get(t, 0)
+            actual = actual_history.get(t, 0)
+            spread = actual - synth
+            writer.writerow([t, synth, actual, spread])

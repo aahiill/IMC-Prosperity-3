@@ -438,12 +438,19 @@ class Trader:
         )
         return orders, buy_order_volume, sell_order_volume
 
-    def get_mid(self, order_depth: OrderDepth) -> Optional[float]:
-        if not order_depth or not order_depth.buy_orders or not order_depth.sell_orders:
-            return None
-        bid = max(order_depth.buy_orders.keys())
-        ask = min(order_depth.sell_orders.keys())
-        return (bid + ask) / 2
+    def get_mid(self, order_depth: OrderDepth, side: str = "both", levels: int = 3) -> float:
+        prices = []
+        best_bid_price, _ = self.get_best_bid(order_depth)
+        best_ask_price, _ = self.get_best_ask(order_depth)
+        if best_bid_price == 0 or best_ask_price == float("inf"):
+            return 0.0
+        if side in ("buy", "both"):
+            for price, volume in sorted(order_depth.buy_orders.items(), reverse=True)[:levels]:
+                prices.extend([price] * abs(volume))
+        if side in ("sell", "both"):
+            for price, volume in sorted(order_depth.sell_orders.items())[:levels]:
+                prices.extend([price] * abs(volume))
+        return sum(prices) / len(prices)
 
     def get_best_bid(self, order_depth: OrderDepth) -> float:
         if order_depth.buy_orders:
@@ -459,13 +466,6 @@ class Trader:
             return best_ask, quantity
         return float("inf"), 1
 
-    def get_mid_price(self, order_depth: OrderDepth) -> float:
-        best_bid_price, _ = self.get_best_bid(order_depth)
-        best_ask_price, _ = self.get_best_ask(order_depth)
-        if best_bid_price == 0 or best_ask_price == float("inf"):
-            return 0.0
-        return (best_bid_price + best_ask_price) / 2.0
-
     def synth_basket(self, state: TradingState) -> float:
         """
         Calculate the synthetic price of PB1 using its underlying components.
@@ -480,9 +480,9 @@ class Trader:
             return 0.0
 
         # Calculate the synthetic price based on the order depths
-        croissants_price = self.get_mid_price(croissants_depth)
-        jams_price = self.get_mid_price(jams_depth)
-        djembe_price = self.get_mid_price(djembe_depth)
+        croissants_price = self.get_mid(croissants_depth)
+        jams_price = self.get_mid(jams_depth)
+        djembe_price = self.get_mid(djembe_depth)
 
         # Calculate the synthetic price of PB1
         synthetic_price = (
@@ -529,7 +529,7 @@ class Trader:
             return orders, data
 
         # Compute prices
-        actual_price = self.get_mid_price(pb1_depth)
+        actual_price = self.get_mid(pb1_depth)
         synthetic_price = self.synth_basket(state)
         data["actual_price"] = actual_price
         data["synthetic_price"] = synthetic_price
