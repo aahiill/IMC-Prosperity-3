@@ -6,8 +6,6 @@ This repository contains all the research and algorithms developed by **Eldia** 
 
 ## The Team 🕺
 
-
-
 <table>
   <tbody>
     <tr>
@@ -45,7 +43,7 @@ The competition included **5 rounds**, each introducing new tradeable products a
 
 ### Rounds Breakdown
 
-- **Round 1**:  `RAINFOREST_RESIN`  `KELP`
+- **Round 1**:  `RAINFOREST_RESIN`  `KELP`  `SQUID_INK`
 
 - **Round 2**:  `PICNIC_BASKET1`  `PICNIC_BASKET2`  `CROISSANTS`  `JAMS`  `DJEMBES`
 

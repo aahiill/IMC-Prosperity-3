@@ -1,6 +1,9 @@
 # Byte-compiled / optimised files (Python cache)
 __pycache__/
 
+# Mac being silly
+.DS_Store
+
 # Virtual environment folders
 .venv/
 .env
