@@ -2,6 +2,9 @@
 
 [![All Contributors](https://img.shields.io/badge/all_contributors-3-orange.svg?style=flat-square)](#contributors-)
 
+• Top 1% globally, 15th in the UK
+
+
 This repository contains all the research and algorithms developed by **Eldia** for **IMC Prosperity 3 (2025)**.
 
 ## The Team 🕺
