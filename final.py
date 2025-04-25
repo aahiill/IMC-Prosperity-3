@@ -2,12 +2,13 @@
 Final submission for IMC Prosperity 3
 This file merges the following trading strategies into one unified Trader class:
 
-• RAINFOREST_RESIN              Market Making with Position Management
-• KELP                          VWAP-style Market Making with Mean Reversion
-• PICNIC_BASKET1                Statistical Arbitrage
-• PICNIC_BASKET2                Mean Reversion
-• VOLCANIC_ROCK & VOUCHERS      Mean Reversion
-• SQUID_INK                     Mean Reversion
+- RAINFOREST_RESIN              Market Making with Position Management
+- KELP                          VWAP-style Market Making with Mean Reversion
+- PICNIC_BASKET1                Statistical Arbitrage
+- PICNIC_BASKET2                Mean Reversion
+- VOLCANIC_ROCK & VOUCHERS      Gamma scalping
+- SQUID_INK                     Mean Reversion
+- MACARONS                      Market Making with skewed quoting based on inventory, forced position flushing
 
 All trading is executed in one Trader class’s run() method.
 Helper methods are used to keep the code modular and easy to follow.
